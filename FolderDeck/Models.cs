@@ -127,7 +127,7 @@ namespace FolderDeck
         {
             ContentCheckError = error;
             if (error == null) { SourceStamp = source; DestinationStamp = destination; }
-            Notify("StateLabel"); Notify("StateColor"); Notify("DifferenceDetail"); Notify("IsTimestampOnly"); Notify("NeedsContentVerification");
+            Notify("StateLabel"); Notify("StateColor"); Notify("DifferenceDetail"); Notify("IsTimestampOnly"); Notify("NeedsContentVerification"); Notify("ActionLabel");
         }
         public void HoldDeletion(string reason)
         {
@@ -138,7 +138,7 @@ namespace FolderDeck
         public bool CanBackup { get { return State == EntryState.SourceOnly || (State == EntryState.Changed && !IsDirectory) || IsForcedCopy; } }
         public bool CanDelete { get { return State == EntryState.DestinationOnly && !DeleteBlocked && Job != null && Job.IsMirrorEnabled && !string.IsNullOrEmpty(RelativePath); } }
         public bool CanApply { get { return CanBackup || CanDelete; } }
-        public string ActionLabel { get { return CanDelete ? (Selected ? "手動で確認" : "手動で確認（未選択）") : CanBackup ? (Selected ? "コピー・作成" : "コピー・作成（未選択）") : "対象外"; } }
+        public string ActionLabel { get { return CanDelete ? (Selected ? "手動で確認" : "手動で確認（未選択）") : CanBackup ? (IsTimestampOnly && !Job.ForceCopy ? (Selected ? "更新日時のみ同期" : "更新日時のみ同期（未選択）") : (Selected ? "コピー・作成" : "コピー・作成（未選択）")) : "対象外"; } }
         public bool Selected { get { return _selected; } set { Set(ref _selected, value && CanApply); } }
         public string JobName { get { return Job.Name; } }
         public string DisplayPath { get { return string.IsNullOrEmpty(RelativePath) ? "（ルートフォルダ）" : RelativePath; } }
@@ -204,7 +204,7 @@ namespace FolderDeck
 
     public sealed class BackupResult
     {
-        public int Files, Folders, Errors, Warnings;
+        public int Files, TimestampFiles, Folders, Errors, Warnings;
         public double CopySeconds, DeleteSeconds;
         public int DeletedFiles, DeletedFolders, SkippedDeletes;
         public List<RecycleHold> Holds = new List<RecycleHold>();

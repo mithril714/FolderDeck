@@ -37,7 +37,7 @@ namespace FolderDeck.Core
                 token.ThrowIfCancellationRequested();
                 bool deleting = entry.CanDelete;
                 string message;
-                int copiedFiles = 0, createdFolders = 0, deletedFiles = 0, deletedFolders = 0, skipped = 0;
+                int copiedFiles = 0, timestampFiles = 0, createdFolders = 0, deletedFiles = 0, deletedFolders = 0, skipped = 0;
                 bool failed = false; string holdReason = null;
                 var warnings = new List<string>();
                 Action flushWarnings = () => {
@@ -69,6 +69,11 @@ namespace FolderDeck.Core
                             Directory.CreateDirectory(entry.DestinationPath);
                             if (!existed) createdFolders = 1;
                         }
+                        else if (entry.IsTimestampOnly && !entry.Job.ForceCopy)
+                        {
+                            UpdateTimestamp(entry, token);
+                            timestampFiles = 1;
+                        }
                         else
                         {
                             CopyFile(entry, token, bytes => {
@@ -84,7 +89,7 @@ namespace FolderDeck.Core
                             }, warnings.Add);
                             copiedFiles = 1;
                         }
-                        message = (entry.IsDirectory ? "フォルダ作成: " : entry.Job.ForceCopy ? "強制コピー完了: " : "コピー完了: ") + entry.JobName + " / " + entry.DisplayPath;
+                        message = (entry.IsDirectory ? "フォルダ作成: " : timestampFiles > 0 ? "更新日時のみ同期完了: " : entry.Job.ForceCopy ? "強制コピー完了: " : "コピー完了: ") + entry.JobName + " / " + entry.DisplayPath;
                     }
                 }
                 catch (OperationCanceledException) { lock (gate) flushWarnings(); throw; }
@@ -96,7 +101,7 @@ namespace FolderDeck.Core
                 {
                     flushWarnings();
                     if (failed) { result.Errors++; if (!deleting) failedCopyJobs.Add(entry.Job.Id); }
-                    result.Files += copiedFiles; result.Folders += createdFolders;
+                    result.Files += copiedFiles; result.TimestampFiles += timestampFiles; result.Folders += createdFolders;
                     result.DeletedFiles += deletedFiles; result.DeletedFolders += deletedFolders; result.SkippedDeletes += skipped;
                     if (holdReason != null) result.Holds.Add(new RecycleHold { Entry = entry, Reason = holdReason });
                     result.Messages.Add(message);
@@ -209,6 +214,65 @@ namespace FolderDeck.Core
             var stamp = entry.CanDelete ? entry.DestinationStamp : entry.SourceStamp;
             return Math.Max(65536d, entry.IsDirectory || stamp == null ? 0d : stamp.Length);
         }
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+        [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+        private static extern bool SetFileTime(Microsoft.Win32.SafeHandles.SafeFileHandle file, IntPtr creationTime, IntPtr accessTime, ref long writeTime);
+
+        private static void VerifyTimestampInput(FileStream stream, string path, FileStamp stamp, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            if (stream.Length != stamp.Length || File.GetLastWriteTimeUtc(path) != stamp.LastWriteUtc)
+                throw new IOException("比較後にファイルが変化しました。再比較してください: " + path);
+            using (var sha = SHA256.Create())
+            {
+                byte[] buffer = new byte[131072]; int read;
+                while (true)
+                {
+                    token.ThrowIfCancellationRequested();
+                    read = stream.Read(buffer, 0, buffer.Length); if (read == 0) break;
+                    sha.TransformBlock(buffer, 0, read, buffer, 0);
+                }
+                sha.TransformFinalBlock(new byte[0], 0, 0);
+                if (BitConverter.ToString(sha.Hash).Replace("-", "") != stamp.Hash || stream.Length != stamp.Length || File.GetLastWriteTimeUtc(path) != stamp.LastWriteUtc)
+                    throw new IOException("比較後にファイル内容が変化しました。再比較してください: " + path);
+            }
+        }
+
+        private static void UpdateTimestamp(CompareEntry entry, CancellationToken token)
+        {
+            string phase = "更新日時同期の準備";
+            try
+            {
+                token.ThrowIfCancellationRequested();
+                if (!entry.IsTimestampOnly || entry.Job.ForceCopy) throw new IOException("内容一致が確認された日時のみの項目を指定してください。");
+                PathGuard.NoReparseAncestors(entry.SourcePath); PathGuard.NoReparseAncestors(entry.DestinationPath);
+                phase = "更新日時同期のファイルを開く";
+                // Deny concurrent writes/deletion for the entire recheck and metadata update.
+                // Open existing destination only: never truncate, create a temporary file, or replace it.
+                using (var source = new FileStream(entry.SourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, 131072, FileOptions.SequentialScan))
+                using (var destination = new FileStream(entry.DestinationPath, FileMode.Open, FileAccess.ReadWrite, FileShare.Read, 131072, FileOptions.SequentialScan))
+                {
+                    phase = "更新日時同期前の内容再確認";
+                    VerifyTimestampInput(source, entry.SourcePath, entry.SourceStamp, token);
+                    VerifyTimestampInput(destination, entry.DestinationPath, entry.DestinationStamp, token);
+                    token.ThrowIfCancellationRequested();
+                    phase = "保存先の更新日時のみ設定";
+                    long time = entry.SourceStamp.LastWriteUtc.ToFileTimeUtc();
+                    if (!SetFileTime(destination.SafeFileHandle, IntPtr.Zero, IntPtr.Zero, ref time))
+                    {
+                        int code = System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+                        throw new IOException("更新日時を設定できません。Win32 " + code + " / " + new System.ComponentModel.Win32Exception(code).Message);
+                    }
+                    phase = "更新日時同期のクローズ";
+                }
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex) when (IsFileOperationFailure(ex))
+            {
+                throw new IOException("更新日時同期失敗【" + phase + "】 / コピー元: " + entry.SourcePath + " / 保存先: " + entry.DestinationPath + " / " + FailureDetails(ex), ex);
+            }
+        }
+
         private static bool IsFileOperationFailure(Exception ex)
         { return ex is IOException || ex is UnauthorizedAccessException || ex is System.Security.SecurityException || ex is NotSupportedException || ex is CryptographicException; }
         private static string FailureDetails(Exception ex)

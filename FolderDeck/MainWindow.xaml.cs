@@ -544,7 +544,7 @@ namespace FolderDeck
                 _manualRemovalBlocked = result.Errors > 0 || result.Warnings > 0 || result.Cancelled;
                 string label = result.Cancelled ? "中断" : result.Errors > 0 || result.Warnings > 0 || result.SkippedDeletes > 0 || blocked > 0 ? "一部未完了" : "完了";
                 foreach (var job in _jobs.Where(j => selected.Any(x => x.Job.Id == j.Id))) job.LastRun = DateTime.Now.ToString("MM/dd HH:mm") + "  " + label;
-                StatusText.Text = "処理" + label + "  /  コピー " + result.Files + " 件・作成 " + result.Folders + " 件・不要項目は手動で確認・削除保留 " + (result.SkippedDeletes + blocked) + " 件・エラー " + result.Errors + " 件・警告 " + result.Warnings + " 件";
+                StatusText.Text = "処理" + label + "  /  コピー " + result.Files + " 件・日時同期 " + result.TimestampFiles + " 件・作成 " + result.Folders + " 件・不要項目は手動で確認・削除保留 " + (result.SkippedDeletes + blocked) + " 件・エラー " + result.Errors + " 件・警告 " + result.Warnings + " 件";
                 AddLog(StatusText.Text, result.Errors == 0 && result.Warnings == 0 ? "#7DE6C4" : "#FFD398");
                 AddLog("工程別所要: 比較 " + WorkTimeEstimate.Duration(_currentComparisonSeconds)
                     + " / コピー・作成 " + WorkTimeEstimate.Duration(result.CopySeconds)
