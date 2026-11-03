@@ -1,0 +1,215 @@
+﻿<Window x:Class="FolderDeck.MainWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+ Style="{StaticResource AppWindow}"
+ Title="FolderDeck — バックアップ" Width="1240" Height="820" MinWidth="1000" MinHeight="700"
+ WindowStartupLocation="CenterScreen" WindowStyle="None" ResizeMode="CanResize"
+ Closing="Window_Closing">
+ <shell:WindowChrome.WindowChrome><shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0"/></shell:WindowChrome.WindowChrome>
+ <Border Background="{StaticResource Ink}" BorderBrush="#7D90AA" BorderThickness="1">
+  <Grid>
+   <Grid.RowDefinitions><RowDefinition Height="40"/><RowDefinition Height="*"/><RowDefinition Height="30"/></Grid.RowDefinitions>
+   <Grid Background="#273444" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="20,0">
+     <Path Data="M 0,3 L 6,3 L 8,5 L 18,5 L 18,16 L 0,16 Z" Stroke="{StaticResource Accent}" StrokeThickness="1.5" Width="18" Height="17" Margin="0,0,10,0"/>
+     <TextBlock Text="FolderDeck" FontWeight="SemiBold"/>
+    </StackPanel>
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+     <Button Content="−" Width="44" Padding="0" Style="{StaticResource QuietButton}" Click="Minimize_Click" ToolTip="最小化"/>
+     <Button Content="□" Width="44" Padding="0" Style="{StaticResource QuietButton}" Click="Maximize_Click" ToolTip="最大化・元に戻す"/>
+     <Button Content="×" Width="44" FontSize="19" Padding="0" Style="{StaticResource QuietButton}" Click="Close_Click" ToolTip="閉じる"/>
+    </StackPanel>
+   </Grid>
+   <Grid Grid.Row="1">
+    <Grid Margin="28,22,28,16">
+     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+     <Grid Margin="0,0,0,18">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0">
+       <TextBlock Text="設定" Foreground="{StaticResource Muted}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+       <ComboBox x:Name="JobList" Width="250" SelectionChanged="JobList_SelectionChanged" AllowDrop="True" Drop="JobList_Drop" DragOver="JobList_DragOver" AutomationProperties.Name="保存した設定">
+        <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip="{Binding ModeLabel}"/></DataTemplate></ComboBox.ItemTemplate>
+       </ComboBox>
+       <Button x:Name="SettingsMenuButton" Content="管理 ▾" Margin="8,0,0,0" Click="SettingsMenu_Click" ToolTip="設定の追加・編集・削除（終了時に自動保存）">
+        <Button.ContextMenu><ContextMenu>
+         <MenuItem x:Name="AddButton" Header="バックアップ設定を追加" Click="Add_Click"/>
+         <MenuItem x:Name="SettingsButton" Header="名前・詳細設定" Click="Settings_Click"/>
+         <MenuItem Header="この設定を削除" Click="Delete_Click"/>
+         </ContextMenu></Button.ContextMenu>
+       </Button>
+      </StackPanel>
+      <Button Grid.Column="2" x:Name="ToolsButton" Content="•••" FontSize="16" Width="42" Padding="8,5" HorizontalAlignment="Right" ToolTip="まとめて操作・出力・設定" Click="Tools_Click">
+       <Button.ContextMenu><ContextMenu>
+        <MenuItem x:Name="FolderToolsMenu" Header="空フォルダを作成">
+         <MenuItem Header="フォルダ構成だけコピー" Tag="1" Click="FolderTool_Click"/>
+         <MenuItem Header="フォルダ名だけコピー" Tag="2" Click="FolderTool_Click"/>
+        </MenuItem>
+        <Separator/>
+        <MenuItem x:Name="CopyParallelismMenu" Header="コピーの並列数">
+         <MenuItem x:Name="CopyOneMenu" Header="1（同時に1ファイル）" Tag="1" IsCheckable="True" Click="CopyParallelism_Click"/>
+         <MenuItem x:Name="CopyTwoMenu" Header="2（別々のHDD向け・初期値）" Tag="2" IsCheckable="True" Click="CopyParallelism_Click"/>
+         <MenuItem x:Name="CopyFourMenu" Header="4（SSDなどで試す）" Tag="4" IsCheckable="True" Click="CopyParallelism_Click"/>
+        </MenuItem>
+        <MenuItem x:Name="FastAllButton" Header="全設定を高速比較にする" Click="FastAll_Click" ToolTip="サイズ・更新日時で判定します。同じサイズ・日時の内容変更は厳密比較で検出してください。"/>
+        <MenuItem x:Name="CompareAllButton" Header="対象の設定をまとめて比較" Click="CompareAll_Click"/>
+        <MenuItem x:Name="BulkButton" Header="複数フォルダをまとめて追加" Click="Bulk_Click"/>
+        <Separator/>
+        <MenuItem x:Name="CsvButton" Header="比較一覧・内容差分をCSVに保存" ToolTip="比較一覧と行ごとの内容差分を2つのCSVに保存します。コピー前に保存してください。" Click="Csv_Click" IsEnabled="False"/>
+        <MenuItem x:Name="HtmlButton" Header="比較一覧・内容差分をHTMLに保存" ToolTip="表示中の変更ファイルの内容差分を含めます。コピー前に保存してください。" Click="Html_Click" IsEnabled="False"/>
+        <MenuItem x:Name="DetailedColumnsMenu" Header="保存先サイズ・更新日時も表示" IsCheckable="True" Checked="DetailedColumns_Changed" Unchecked="DetailedColumns_Changed"/>
+        <Separator/>
+        <MenuItem Header="設定・ログの場所を開く" Click="OpenData_Click"/>
+        <MenuItem Header="使い方" Click="Help_Click"/>
+       </ContextMenu></Button.ContextMenu>
+      </Button>
+     </Grid>
+     <Border Grid.Row="1" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,16">
+      <Grid>
+       <Grid x:Name="JobEditor" IsEnabled="False" Visibility="Collapsed">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <Grid Margin="0,0,0,10">
+         <Grid.ColumnDefinitions><ColumnDefinition Width="74"/><ColumnDefinition Width="*"/><ColumnDefinition Width="78"/></Grid.ColumnDefinitions>
+         <TextBlock Text="コピー元" VerticalAlignment="Center" Foreground="{StaticResource Muted}"/>
+         <TextBox x:Name="SourceBox" Grid.Column="1" AllowDrop="True" PreviewDragEnter="PathBox_DragOver" PreviewDragOver="PathBox_DragOver" PreviewDragLeave="PathBox_DragLeave" PreviewDrop="PathBox_Drop" Text="{Binding Source,UpdateSourceTrigger=PropertyChanged}" FontSize="13" ToolTip="内容を取り出すフォルダ。エクスプローラーからフォルダを1つドロップして指定できます。"/>
+         <Button Grid.Column="2" Content="選ぶ" Click="SourceBrowse_Click" Margin="10,0,0,0" Padding="10,8"/>
+        </Grid>
+        <Grid Grid.Row="1">
+         <Grid.ColumnDefinitions><ColumnDefinition Width="74"/><ColumnDefinition Width="*"/><ColumnDefinition Width="78"/></Grid.ColumnDefinitions>
+         <TextBlock Text="保存先" VerticalAlignment="Center" Foreground="{StaticResource Muted}"/>
+         <TextBox x:Name="DestinationBox" Grid.Column="1" AllowDrop="True" PreviewDragEnter="PathBox_DragOver" PreviewDragOver="PathBox_DragOver" PreviewDragLeave="PathBox_DragLeave" PreviewDrop="PathBox_Drop" Text="{Binding Destination,UpdateSourceTrigger=PropertyChanged}" FontSize="13" ToolTip="コピー・作成先のフォルダ。フォルダを1つドロップして指定できます。手入力では新しいフォルダ名も指定できます。"/>
+         <Button Grid.Column="2" Content="選ぶ" Click="DestinationBrowse_Click" Margin="10,0,0,0" Padding="10,8"/>
+        </Grid>
+        <Grid Grid.Row="2" Margin="74,12,0,0">
+         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+         <StackPanel x:Name="CopyPolicyPanel" Orientation="Horizontal" VerticalAlignment="Center">
+          <TextBlock Text="コピー方式" FontSize="11" Foreground="{StaticResource Muted}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+          <ComboBox x:Name="CopyPolicyCombo" Width="160" FontSize="12" SelectionChanged="CopyPolicyCombo_SelectionChanged" AutomationProperties.Name="コピー方式">
+           <ComboBoxItem Content="差分だけコピー"/>
+           <ComboBoxItem Content="すべて強制コピー"/>
+          </ComboBox>
+         </StackPanel>
+         <StackPanel x:Name="CompareMethodPanel" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+          <TextBlock Text="比較" FontSize="11" Foreground="{StaticResource Muted}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+          <ComboBox x:Name="CompareMethodCombo" Width="200" FontSize="12" SelectionChanged="CompareMethodCombo_SelectionChanged" AutomationProperties.Name="比較方法" ToolTip="高速はサイズと更新日時で判定します。同じサイズ・同じ日時の内容変更も検出する場合は厳密を選択してください。">
+           <ComboBoxItem Content="高速（サイズ・更新日時）"/>
+           <ComboBoxItem Content="厳密（ファイル内容）"/>
+          </ComboBox>
+         </StackPanel>
+        </Grid>
+        <Grid Grid.Row="3">
+         <CheckBox x:Name="MirrorCheck" Content="不要項目も確認（削除はエクスプローラーで）" IsChecked="{Binding MirrorDestination}" FontSize="12" Margin="74,12,0,0" ToolTip="コピー元にない項目を表示します。［3 不要項目を開く］で選択し、削除はエクスプローラーで手動操作します。"/>
+         <TextBlock x:Name="ModeNote" Visibility="Collapsed" FontSize="12" Foreground="{StaticResource Muted}" Margin="74,10,0,0" TextWrapping="Wrap"/>
+        </Grid>
+        <Grid Grid.Row="4" Margin="0,16,0,0">
+         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+         <Button x:Name="CompareButton" Grid.Column="1" Content="1  差分を確認" Click="Compare_Click" Style="{StaticResource PrimaryButton}" Padding="22,11" VerticalAlignment="Top"/>
+        </Grid>
+       </Grid>
+      </Grid>
+     </Border>
+     <Grid x:Name="ResultsToolbar" Grid.Row="2" Margin="0,0,0,12" Visibility="Collapsed">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock Text="比較結果" FontSize="14" FontWeight="SemiBold"/><TextBlock x:Name="ResultCount" Text="未比較" Foreground="{StaticResource Muted}" FontSize="12" Margin="12,2,0,0"/></StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+       <Button x:Name="VerifyContentButton" Content="中身を確認" Click="VerifyContent_Click" FontSize="12" Padding="10,5" Margin="0,0,14,0" ToolTip="表示中の変更候補で、サイズが同じ・内容未確認のファイルだけを読み込みます。時間がかかる場合があります。"/>
+       <CheckBox x:Name="DiffOnlyCheck" Content="差分だけ" IsChecked="True" Checked="Filter_Changed" Unchecked="Filter_Changed" FontSize="12" Margin="0,0,16,0"/>
+       <Grid Width="140">
+        <TextBox x:Name="SearchBox" FontSize="12" Padding="9,6" ToolTip="パス・設定名で絞り込み" AutomationProperties.Name="パス・設定名で絞り込み" TextChanged="Search_Changed"/>
+        <TextBlock Text="検索" Foreground="{StaticResource Muted}" FontSize="12" Margin="10,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False">
+         <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><MultiDataTrigger><MultiDataTrigger.Conditions><Condition Binding="{Binding Text,ElementName=SearchBox}" Value=""/><Condition Binding="{Binding IsKeyboardFocusWithin,ElementName=SearchBox}" Value="False"/></MultiDataTrigger.Conditions><Setter Property="Visibility" Value="Visible"/></MultiDataTrigger></Style.Triggers></Style></TextBlock.Style>
+        </TextBlock>
+       </Grid>
+      </StackPanel>
+     </Grid>
+     <Border x:Name="ResultsPane" Grid.Row="3" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" ClipToBounds="True" Visibility="Collapsed">
+      <Grid>
+       <DataGrid x:Name="ResultsGrid" SelectionChanged="ResultsGrid_SelectionChanged" MouseDoubleClick="ResultsGrid_MouseDoubleClick" CanUserSortColumns="True">
+        <DataGrid.Columns>
+         <DataGridTemplateColumn Width="42">
+          <DataGridTemplateColumn.Header><CheckBox x:Name="AllSelectedCheck" IsChecked="True" Checked="SelectAll_Changed" Unchecked="SelectAll_Changed" ToolTip="表示中の処理対象を選択・解除"/></DataGridTemplateColumn.Header>
+          <DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsChecked="{Binding Selected,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanApply}" HorizontalAlignment="Center"/></DataTemplate></DataGridTemplateColumn.CellTemplate>
+         </DataGridTemplateColumn>
+         <DataGridTemplateColumn Header="状態 / 差分" Width="126" SortMemberPath="StateLabel"><DataGridTemplateColumn.CellTemplate><DataTemplate><TextBlock Text="{Binding StateLabel}" Foreground="{Binding StateColor}" FontSize="12" ToolTip="{Binding DifferenceDetail}"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+         <DataGridTextColumn Header="ファイル・フォルダ" Binding="{Binding DisplayPath}" Width="*" MinWidth="160" IsReadOnly="True"/>
+         <DataGridTextColumn x:Name="JobColumn" Header="設定" Binding="{Binding JobName}" Width="120" IsReadOnly="True" Visibility="Collapsed"/>
+         <DataGridTextColumn Header="サイズ" Binding="{Binding SourceSize}" Width="88" IsReadOnly="True"/>
+         <DataGridTextColumn x:Name="DestinationSizeColumn" Header="保存先サイズ" Binding="{Binding DestinationSize}" Width="100" IsReadOnly="True" Visibility="Collapsed"/>
+         <DataGridTextColumn x:Name="SourceTimeColumn" Header="コピー元の更新日時" Binding="{Binding SourceTime}" Width="158" IsReadOnly="True" Visibility="Collapsed"/>
+        </DataGrid.Columns>
+       </DataGrid>
+       <StackPanel x:Name="EmptyState" VerticalAlignment="Center" HorizontalAlignment="Center" IsHitTestVisible="False" Margin="18">
+        <TextBlock x:Name="EmptyHeading" Text="差分を確認すると、ここに表示されます" Foreground="{StaticResource Muted}" TextAlignment="Center"/>
+        <TextBlock x:Name="EmptyNote" Text="" Foreground="{StaticResource Muted}" TextAlignment="Center" FontSize="12" Margin="0,8,0,0"/>
+       </StackPanel>
+      </Grid>
+     </Border>
+      <Border x:Name="DetailsPane" Grid.Row="3" Visibility="Collapsed" Background="#334355" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6">
+       <TabControl x:Name="DetailsTabs">
+        <TabItem Header="内容の差分">
+         <Grid>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+          <Grid Margin="12,7,12,4">
+           <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
+           <TextBlock x:Name="DiffTitle" Text="ファイルを選択" TextTrimming="CharacterEllipsis" FontSize="12" VerticalAlignment="Center"/>
+           <Button x:Name="DiffSaveButton" Grid.Column="1" Content="差分を保存" FontSize="11" Padding="9,4" Click="DiffSave_Click" IsEnabled="False"/>
+          </Grid>
+          <TextBlock x:Name="DiffMeta" Grid.Row="1" Margin="12,0,12,5" FontSize="10" Foreground="{StaticResource Muted}" Text="比較方向: コピー先 → コピー元" TextWrapping="Wrap"/>
+          <Grid Grid.Row="2">
+           <ListBox x:Name="DiffList" Background="Transparent" BorderThickness="0" FontFamily="Consolas, Yu Gothic UI" FontSize="12" ScrollViewer.HorizontalScrollBarVisibility="Auto" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+            <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="0"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><ContentPresenter/></ControlTemplate></Setter.Value></Setter></Style></ListBox.ItemContainerStyle>
+            <ListBox.ItemTemplate><DataTemplate>
+             <Border Background="{Binding Background}"><Grid MinHeight="21">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="44"/><ColumnDefinition Width="44"/><ColumnDefinition Width="22"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+              <TextBlock Text="{Binding OldLabel}" Foreground="#BCCADA" TextAlignment="Right" Margin="0,2,10,2"/>
+              <TextBlock Grid.Column="1" Text="{Binding NewLabel}" Foreground="#BCCADA" TextAlignment="Right" Margin="0,2,10,2"/>
+              <TextBlock Grid.Column="2" Text="{Binding Prefix}" Foreground="{Binding Foreground}" Margin="0,2,0,2"/>
+              <TextBlock Grid.Column="3" Text="{Binding Text}" Foreground="{Binding Foreground}" Margin="0,2,18,2"/>
+             </Grid></Border>
+            </DataTemplate></ListBox.ItemTemplate>
+           </ListBox>
+           <TextBlock x:Name="DiffEmpty" Text="一覧からファイルを選ぶと、内容の差分を確認できます。" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="16" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
+          </Grid>
+         </Grid>
+        </TabItem>
+        <TabItem Header="実行履歴"><ListBox x:Name="LogList" Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Auto"><ListBox.ItemTemplate><DataTemplate><StackPanel Orientation="Horizontal" Margin="4,3"><TextBlock Text="{Binding Time}" Foreground="#BCCADA" FontFamily="Consolas" Margin="0,0,16,0"/><TextBlock Text="{Binding Text}" Foreground="{Binding Color}" FontSize="12"/></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox></TabItem>
+        <TabItem x:Name="SettingsTab" Header="設定" DataContext="{Binding DataContext,ElementName=JobEditor}">
+         <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="16,12">
+           <TextBlock Text="設定名" Style="{StaticResource Label}"/><TextBox Text="{Binding Name,UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12"/>
+           <TextBlock Text="処理内容" Style="{StaticResource Label}"/>
+           <ComboBox x:Name="ModeCombo" SelectedIndex="0" SelectionChanged="ModeCombo_SelectionChanged" Margin="0,0,0,12" AutomationProperties.Name="処理内容">
+            <ComboBoxItem Content="バックアップ"/>
+            <ComboBoxItem Content="フォルダ構成だけコピー"/>
+            <ComboBoxItem Content="フォルダ名だけコピー"/>
+           </ComboBox>
+           <CheckBox Content="まとめて比較する対象" IsChecked="{Binding Enabled}" Margin="0,0,0,12"/>
+           <WrapPanel><CheckBox x:Name="RecursiveCheck" Content="下の階層も含める" IsChecked="{Binding IncludeSubfolders}" VerticalAlignment="Center" Margin="0,0,14,0"/><Button x:Name="DeleteButton" Content="この設定を削除" Click="Delete_Click" Style="{StaticResource QuietButton}" FontSize="12" Padding="7,5"/></WrapPanel>
+          </StackPanel>
+
+         </ScrollViewer>
+        </TabItem>
+       </TabControl>
+      </Border>
+     <Button x:Name="DetailsButton" Grid.Row="4" Content="›  内容の差分・履歴" Click="Details_Click" Style="{StaticResource QuietButton}" HorizontalAlignment="Left" FontSize="12" Padding="0,7" Margin="0,8,0,0" Visibility="Collapsed"/>
+
+     <Grid x:Name="BackupFooter" Grid.Row="5" Margin="0,16,0,0" Visibility="Collapsed">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <StackPanel VerticalAlignment="Center" Margin="0,0,10,0"><TextBlock x:Name="SelectionSummary" Text="コピー対象 0 項目" FontSize="13"/><TextBlock x:Name="CompareTime" Text="" FontSize="10" Foreground="{StaticResource Muted}" Margin="0,5,0,0" TextTrimming="CharacterEllipsis"/></StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+       <Button x:Name="CancelButton" Content="キャンセル" Click="Cancel_Click" Visibility="Collapsed" Margin="0,0,10,0"/>
+       <Button x:Name="ExplorerButton" Content="3  不要項目を開く" Click="Explorer_Click" Margin="0,0,10,0" IsEnabled="False" ToolTip="親フォルダごとに不要項目を選択して開きます。削除は手動です。"/>
+       <Button x:Name="BackupButton" Content="2  バックアップする" Click="Backup_Click" Style="{StaticResource PrimaryButton}" Padding="24,12" IsEnabled="False"/>
+      </StackPanel>
+     </Grid>
+    </Grid>
+   </Grid>
+   <Grid Grid.Row="2" Background="#273444">
+    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="150"/></Grid.ColumnDefinitions>
+    <TextBlock x:Name="StatusText" Text="準備完了" FontSize="11" Foreground="#CBD5E1" VerticalAlignment="Center" Margin="18,0,0,0" TextTrimming="CharacterEllipsis"/>
+    <TextBlock x:Name="TimingText" Grid.Column="1" FontSize="11" Foreground="{StaticResource Text}" VerticalAlignment="Center" Margin="12,0,0,0" ToolTip="残り時間は目安です。接続先の速度やファイル構成で変動します。比較の見積もりは直前の同条件の実績を使います。"/>
+    <ProgressBar x:Name="WorkBar" Grid.Column="2" Height="3" Margin="10,0,18,0" Foreground="{StaticResource Accent}" Background="#43576F" BorderThickness="0" Visibility="Collapsed"/>
+   </Grid>
+  </Grid>
+ </Border>
+</Window>
