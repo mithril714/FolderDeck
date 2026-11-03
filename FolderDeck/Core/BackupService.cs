@@ -41,7 +41,7 @@ namespace FolderDeck.Core
                 bool failed = false; string holdReason = null;
                 var warnings = new List<string>();
                 Action flushWarnings = () => {
-                    // Caller holds gate. Cleanup problems must not mask the original copy failure/cancellation.
+                    // Caller holds gate. Retained temporary files must be reported without masking failure/cancellation.
                     result.Warnings += warnings.Count;
                     foreach (var warning in warnings) { result.Messages.Add(warning); report(warning, false); }
                     warnings.Clear();
@@ -281,13 +281,11 @@ namespace FolderDeck.Core
             }
             finally
             {
-                // Only a temporary file successfully created by this operation may be removed.
-                // Never delete/truncate the destination or retry around a blocked replacement.
+                // Diagnostic mode: leave our temporary file in place on failure/cancellation.
+                // Do not delete it here or during a later run. Successful Move/Replace consumes it.
                 if (ownsTemp)
                 {
-                    try { File.Delete(temp); }
-                    catch (Exception ex) when (IsFileOperationFailure(ex))
-                    { onWarning?.Invoke("警告（一時ファイルの削除失敗）: " + temp + " / " + FailureDetails(ex)); }
+                    onWarning?.Invoke("警告（一時ファイルを保持・自動削除しません）: " + temp + " / コピーが完了していないため、内容が不完全な場合があります。");
                 }
             }
         }
