@@ -39,6 +39,13 @@ namespace FolderDeck.Core
                 string message;
                 int copiedFiles = 0, createdFolders = 0, deletedFiles = 0, deletedFolders = 0, skipped = 0;
                 bool failed = false; string holdReason = null;
+                var warnings = new List<string>();
+                Action flushWarnings = () => {
+                    // Caller holds gate. Cleanup problems must not mask the original copy failure/cancellation.
+                    result.Warnings += warnings.Count;
+                    foreach (var warning in warnings) { result.Messages.Add(warning); report(warning, false); }
+                    warnings.Clear();
+                };
                 try
                 {
                     // Deletions run only after every copy worker has completed.
@@ -74,19 +81,20 @@ namespace FolderDeck.Core
                                     progressClock.Restart();
                                     report("コピー中: " + entry.JobName + " / " + entry.DisplayPath, true);
                                 }
-                            });
+                            }, warnings.Add);
                             copiedFiles = 1;
                         }
                         message = (entry.IsDirectory ? "フォルダ作成: " : entry.Job.ForceCopy ? "強制コピー完了: " : "コピー完了: ") + entry.JobName + " / " + entry.DisplayPath;
                     }
                 }
-                catch (OperationCanceledException) { throw; }
+                catch (OperationCanceledException) { lock (gate) flushWarnings(); throw; }
                 catch (RecycleUnavailableException ex)
                 { skipped = 1; holdReason = ex.Message; message = "削除保留（ごみ箱へ移動不可）: " + entry.JobName + " / " + entry.DisplayPath + " / " + ex.Message; }
-                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is System.Security.SecurityException)
+                catch (Exception ex) when (IsFileOperationFailure(ex))
                 { failed = true; message = "エラー（" + (deleting ? "削除" : "コピー") + "）: " + entry.JobName + " / " + entry.DisplayPath + " / " + ex.Message; }
                 lock (gate)
                 {
+                    flushWarnings();
                     if (failed) { result.Errors++; if (!deleting) failedCopyJobs.Add(entry.Job.Id); }
                     result.Files += copiedFiles; result.Folders += createdFolders;
                     result.DeletedFiles += deletedFiles; result.DeletedFolders += deletedFolders; result.SkippedDeletes += skipped;
@@ -201,50 +209,86 @@ namespace FolderDeck.Core
             var stamp = entry.CanDelete ? entry.DestinationStamp : entry.SourceStamp;
             return Math.Max(65536d, entry.IsDirectory || stamp == null ? 0d : stamp.Length);
         }
-        private static void CopyFile(CompareEntry entry, CancellationToken token, Action<long> onCopied)
+        private static bool IsFileOperationFailure(Exception ex)
+        { return ex is IOException || ex is UnauthorizedAccessException || ex is System.Security.SecurityException || ex is NotSupportedException || ex is CryptographicException; }
+        private static string FailureDetails(Exception ex)
+        { return ex.GetType().FullName + " / HRESULT 0x" + ex.HResult.ToString("X8") + " / " + ex.Message; }
+        private static void CopyFile(CompareEntry entry, CancellationToken token, Action<long> onCopied, Action<string> onWarning = null)
         {
-            if (entry.SourceStamp == null) throw new IOException("比較情報がありません。再比較してください。");
-            if (!CompareService.Matches(entry.DestinationPath, entry.DestinationStamp, token))
-                throw new IOException("比較後にコピー先が変化しました。再比較してください。");
-            string parent = Path.GetDirectoryName(entry.DestinationPath);
-            Directory.CreateDirectory(parent);
-            PathGuard.NoReparseAncestors(parent);
-            string temp = Path.Combine(parent, ".folderdeck-" + Guid.NewGuid().ToString("N") + ".tmp");
+            string temp = null, phase = "コピー前の確認";
+            bool ownsTemp = false;
             try
             {
+                token.ThrowIfCancellationRequested();
+                if (entry.SourceStamp == null) throw new IOException("比較情報がありません。再比較してください。");
+                if (!CompareService.Matches(entry.DestinationPath, entry.DestinationStamp, token))
+                    throw new IOException("比較後にコピー先が変化しました。再比較してください。");
+                phase = "保存先フォルダの準備";
+                string parent = Path.GetDirectoryName(entry.DestinationPath);
+                Directory.CreateDirectory(parent);
+                PathGuard.NoReparseAncestors(parent);
+                temp = Path.Combine(parent, ".folderdeck-" + Guid.NewGuid().ToString("N") + ".tmp");
+                phase = "コピー元・一時ファイルを開く";
                 using (var source = new FileStream(entry.SourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, 131072, FileOptions.SequentialScan))
                 using (var destination = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 131072, FileOptions.SequentialScan))
-                using (var sha = string.IsNullOrEmpty(entry.SourceStamp.Hash) ? null : SHA256.Create())
                 {
-                    if (source.Length != entry.SourceStamp.Length || File.GetLastWriteTimeUtc(entry.SourcePath) != entry.SourceStamp.LastWriteUtc)
-                        throw new IOException("比較後にコピー元が変化しました。再比較してください。");
-                    byte[] buffer = new byte[131072]; int length; long transferred = 0;
-                    while ((length = source.Read(buffer, 0, buffer.Length)) > 0)
+                    ownsTemp = true;
+                    phase = "内容検証の準備";
+                    using (var sha = string.IsNullOrEmpty(entry.SourceStamp.Hash) ? null : SHA256.Create())
                     {
-                        token.ThrowIfCancellationRequested();
-                        destination.Write(buffer, 0, length);
-                        sha?.TransformBlock(buffer, 0, length, buffer, 0);
-                        transferred += length; onCopied?.Invoke(transferred);
+                        phase = "コピー元の再確認";
+                        if (source.Length != entry.SourceStamp.Length || File.GetLastWriteTimeUtc(entry.SourcePath) != entry.SourceStamp.LastWriteUtc)
+                            throw new IOException("比較後にコピー元が変化しました。再比較してください。");
+                        byte[] buffer = new byte[131072]; int length; long transferred = 0;
+                        while (true)
+                        {
+                            token.ThrowIfCancellationRequested();
+                            phase = "コピー元の読み取り";
+                            length = source.Read(buffer, 0, buffer.Length); if (length == 0) break;
+                            phase = "一時ファイルへの書き込み";
+                            destination.Write(buffer, 0, length);
+                            phase = "コピー内容の検証";
+                            sha?.TransformBlock(buffer, 0, length, buffer, 0);
+                            transferred += length; onCopied?.Invoke(transferred);
+                        }
+                        phase = "コピー元の内容・更新日時の最終確認";
+                        sha?.TransformFinalBlock(new byte[0], 0, 0);
+                        if ((sha != null && BitConverter.ToString(sha.Hash).Replace("-", "") != entry.SourceStamp.Hash) || source.Length != entry.SourceStamp.Length ||
+                            File.GetLastWriteTimeUtc(entry.SourcePath) != entry.SourceStamp.LastWriteUtc)
+                            throw new IOException("コピー元の内容が比較時から変化しました。再比較してください。");
+                        phase = "一時ファイルの書き込み確定・クローズ";
+                        destination.Flush(true);
                     }
-                    sha?.TransformFinalBlock(new byte[0], 0, 0);
-                    if ((sha != null && BitConverter.ToString(sha.Hash).Replace("-", "") != entry.SourceStamp.Hash) || source.Length != entry.SourceStamp.Length ||
-                        File.GetLastWriteTimeUtc(entry.SourcePath) != entry.SourceStamp.LastWriteUtc)
-                        throw new IOException("コピー元の内容が比較時から変化しました。再比較してください。");
-                    destination.Flush(true);
                 }
+                phase = "更新日時の設定";
                 File.SetLastWriteTimeUtc(temp, entry.SourceStamp.LastWriteUtc);
                 token.ThrowIfCancellationRequested();
+                phase = "保存先の再確認";
                 PathGuard.NoReparseAncestors(entry.DestinationPath);
                 if (!CompareService.Matches(entry.DestinationPath, entry.DestinationStamp, token))
                     throw new IOException("コピー中にコピー先が変化しました。再比較してください。");
                 token.ThrowIfCancellationRequested();
+                phase = entry.DestinationStamp == null ? "新規ファイルの名前変更" : "既存ファイルの置き換え";
                 if (entry.DestinationStamp == null) File.Move(temp, entry.DestinationPath);
                 else File.Replace(temp, entry.DestinationPath, null);
+                ownsTemp = false;
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex) when (IsFileOperationFailure(ex))
+            {
+                throw new IOException("コピー失敗【" + phase + "】 / コピー元: " + entry.SourcePath + " / 保存先: " + entry.DestinationPath
+                    + " / 一時ファイル: " + (temp ?? "未作成") + " / " + FailureDetails(ex), ex);
             }
             finally
             {
-                // Never delete the destination to work around a replacement failure.
-                try { if (File.Exists(temp)) File.Delete(temp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+                // Only a temporary file successfully created by this operation may be removed.
+                // Never delete/truncate the destination or retry around a blocked replacement.
+                if (ownsTemp)
+                {
+                    try { File.Delete(temp); }
+                    catch (Exception ex) when (IsFileOperationFailure(ex))
+                    { onWarning?.Invoke("警告（一時ファイルの削除失敗）: " + temp + " / " + FailureDetails(ex)); }
+                }
             }
         }
     }

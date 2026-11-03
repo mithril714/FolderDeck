@@ -541,11 +541,11 @@ namespace FolderDeck
                 try { foreach (var hold in result.Holds) hold.Entry.HoldDeletion(hold.Reason); }
                 finally { _batchSelection = false; CacheEntries(); }
                 _afterBackup = true; _snapshotReady = false;
-                _manualRemovalBlocked = result.Errors > 0 || result.Cancelled;
-                string label = result.Cancelled ? "中断" : result.Errors > 0 || result.SkippedDeletes > 0 || blocked > 0 ? "一部未完了" : "完了";
+                _manualRemovalBlocked = result.Errors > 0 || result.Warnings > 0 || result.Cancelled;
+                string label = result.Cancelled ? "中断" : result.Errors > 0 || result.Warnings > 0 || result.SkippedDeletes > 0 || blocked > 0 ? "一部未完了" : "完了";
                 foreach (var job in _jobs.Where(j => selected.Any(x => x.Job.Id == j.Id))) job.LastRun = DateTime.Now.ToString("MM/dd HH:mm") + "  " + label;
-                StatusText.Text = "処理" + label + "  /  コピー " + result.Files + " 件・作成 " + result.Folders + " 件・不要項目は手動で確認・削除保留 " + (result.SkippedDeletes + blocked) + " 件・エラー " + result.Errors + " 件";
-                AddLog(StatusText.Text, result.Errors == 0 ? "#7DE6C4" : "#FFD398");
+                StatusText.Text = "処理" + label + "  /  コピー " + result.Files + " 件・作成 " + result.Folders + " 件・不要項目は手動で確認・削除保留 " + (result.SkippedDeletes + blocked) + " 件・エラー " + result.Errors + " 件・警告 " + result.Warnings + " 件";
+                AddLog(StatusText.Text, result.Errors == 0 && result.Warnings == 0 ? "#7DE6C4" : "#FFD398");
                 AddLog("工程別所要: 比較 " + WorkTimeEstimate.Duration(_currentComparisonSeconds)
                     + " / コピー・作成 " + WorkTimeEstimate.Duration(result.CopySeconds)
                     + " / 並列数 " + _copyParallelism);
@@ -553,7 +553,7 @@ namespace FolderDeck
                     + " / コピー・作成 " + WorkTimeEstimate.Duration(result.CopySeconds)
                     + " / 不要項目は手動確認・操作後に再比較";
                 if (!_settingsLoadFailed) SaveSettings(); DetailsTabs.SelectedIndex = 1;
-                if (result.Errors > 0 || result.SkippedDeletes > 0 || blocked > 0) { _showDetails = true; UpdateDetailsView(); }
+                if (result.Errors > 0 || result.Warnings > 0 || result.SkippedDeletes > 0 || blocked > 0) { _showDetails = true; UpdateDetailsView(); }
             }
             catch (OperationCanceledException) { _snapshotReady = false; _afterBackup = true; StatusText.Text = "キャンセルしました。再比較してください。"; AddLog(StatusText.Text); }
             catch (Exception ex) { _snapshotReady = false; _afterBackup = true; AddLog(ex.Message, "#FFACB4"); StatusText.Text = "バックアップでエラーが発生しました。"; ShowError(ex); }
@@ -700,7 +700,7 @@ namespace FolderDeck
             _logs.AppendRange(batch.Select(text => new LogEntry { Text = text,
                 Color = color ?? (text.StartsWith("エラー", StringComparison.Ordinal) ? "#FFACB4" : "#D0D9E5") }));
             try { SettingsStore.AppendLogs(batch); }
-            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { StatusText.ToolTip = "ログを保存できません: " + ex.Message; }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is System.Security.SecurityException) { StatusText.ToolTip = "ログを保存できません: " + ex.Message; }
         }
         private void OpenData_Click(object sender, RoutedEventArgs e)
         { try { Directory.CreateDirectory(SettingsStore.DataDirectory); Process.Start(new ProcessStartInfo(SettingsStore.DataDirectory) { UseShellExecute = true }); } catch (Exception ex) { ShowError(ex); } }

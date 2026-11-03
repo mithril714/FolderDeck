@@ -204,7 +204,7 @@ namespace FolderDeck
 
     public sealed class BackupResult
     {
-        public int Files, Folders, Errors;
+        public int Files, Folders, Errors, Warnings;
         public double CopySeconds, DeleteSeconds;
         public int DeletedFiles, DeletedFolders, SkippedDeletes;
         public List<RecycleHold> Holds = new List<RecycleHold>();
